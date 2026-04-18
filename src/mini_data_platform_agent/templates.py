@@ -437,5 +437,15 @@ def render_query_plan(
     template_key = template_for_intent(intent, context)
     template_name, renderer = TEMPLATES.get(template_key, TEMPLATES["generic"])
     _ = template_name
-    return renderer(intent, context, normalized_limit)
 
+    plan = renderer(intent, context, normalized_limit)
+    if template_key == "generic":
+        if intent.intent == "generic":
+            reason = "generic_intent_requested"
+        elif intent.confidence < _CONFIDENCE_FALLBACK_THRESHOLD:
+            reason = "low_confidence_fallback"
+        else:
+            reason = "unsupported_intent_fallback"
+        plan = plan.model_copy(update={"fallback_reason": reason})
+
+    return plan
