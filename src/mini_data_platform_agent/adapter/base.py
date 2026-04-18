@@ -9,7 +9,7 @@ from ..config import AppConfig
 from ..types import PlatformContext, QueryResult
 
 
-_SELECT_RE = re.compile(r"^\s*(with\b)?\s*select\b", re.IGNORECASE | re.DOTALL)
+_SELECT_RE = re.compile(r"^\s*(?:select|with)\b", re.IGNORECASE | re.DOTALL)
 
 
 class AdapterError(RuntimeError):
@@ -53,4 +53,3 @@ class PlatformAdapter(ABC):
 
         effective_limit = self.config.effective_limit(limit)
         return self._execute_select(sql=sql, limit=effective_limit)
-

@@ -59,11 +59,7 @@ def _extract_cte_names(statement: str) -> set[str]:
     if not lowered.startswith("with"):
         return set()
 
-    cte_section_end = lowered.find(" select ")
-    if cte_section_end == -1:
-        return set()
-    cte_section = statement[:cte_section_end]
-    return {_normalise_identifier(match.group(1)) for match in _CTE_RE.finditer(cte_section)}
+    return {_normalise_identifier(match.group(1)) for match in _CTE_RE.finditer(lowered)}
 
 
 def _split_statements(sql: str) -> list[str]:
