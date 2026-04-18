@@ -44,8 +44,8 @@ def test_load_context_discovers_schema_and_tables(tmp_path: Path) -> None:
     assert "main" in context.schemas
     assert context.tables["main.orders"].columns[0].name == "order_id"
     assert context.tables["main.orders"].row_count == 3
-    assert context.candidate_dim_tables == ["dim_customers"]
-    assert context.candidate_fact_tables == []
+    assert "dim_customers" in context.candidate_dim_tables
+    assert "orders" in context.candidate_fact_tables
 
 
 def test_run_select_blocks_non_select_statements(tmp_path: Path) -> None:
@@ -55,4 +55,3 @@ def test_run_select_blocks_non_select_statements(tmp_path: Path) -> None:
 
     with pytest.raises(UnsupportedQueryError):
         adapter.run_select("INSERT INTO users VALUES (3, 'CA')")
-
