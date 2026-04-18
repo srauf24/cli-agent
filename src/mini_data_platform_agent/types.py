@@ -85,3 +85,17 @@ class QueryResult(BaseModel):
     row_count: int
     duration_ms: int
     truncated: bool = False
+
+
+class AgentAnswer(BaseModel):
+    """Structured response returned from a question resolution."""
+
+    model_config = ConfigDict(frozen=True)
+
+    question: str
+    intent: Intent
+    sql: str
+    assumptions: list[str] = Field(default_factory=list)
+    result: QueryResult | None = None
+    summary: str = ""
+    fallback_reason: str | None = None
