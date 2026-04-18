@@ -1,191 +1,75 @@
-# Mini Data Platform
+# Mini Data Platform CLI Agent
 
-If you have an applied AI interview at Astronomer, we'll ask you to build a small project around this repo. You can also proactively do this as part of your application to speed up the process.
+I built a CLI agent that answers ad-hoc analytics questions over a DuckDB-based mini data platform.
 
-This repo is a synthetic data platform containing mock data csv files, Airflow DAGs, dbt models, Evidence dashboards, and a DuckDB data warehouse. Your objective is to create an agent exposed via a CLI to interact with the data platform. This CLI agent should be geared specifically towards ad-hoc questions and analysis. Things like:
+### Example questions
 
-- How much in sales did we do last quarter?
-- Which two products are most frequently bought together?
-- Are there any anomalies with how we sell products?
-- What's our average customer lifetime value?
-- ... and other, more complex things!
+- “How much in sales did we do last quarter?”
+- “Which two products are most frequently bought together?”
+- “Are there any anomalies with how we sell products?”
+- “What’s our average customer lifetime value?”
 
-To complete this, clone the repo:
+## What I built
 
-```bash
-git clone https://github.com/astronomer/mini-data-platform.git
-```
+I implemented a read-only question-answering pipeline with one CLI entrypoint:
 
-Then build a CLI agent where you can send questions like the ones above. We have no particular requirements around languages, model providers, methods, etc - instead, we want you to demonstrate how you think about these problems! While this repo is representative of an e-commerce company's data platform, you should aim to keep your implementation generic enough that you could plug in other "mini data platforms". See how much you can infer based on the code and warehouse metadata instead of providing explicit documentation about this data platform to the agent upfront.
+`mini-agent ask "<question>"`
 
-To submit, share your repo with us. You should modify / create a new README that outlines your approach and where you'd continue building things if you had more time. This should take no more than a few hours.
+Optional flags:
 
-## Quick Setup
+- `--json`: machine-friendly output
+- `--limit`: result row cap (safety-enforced)
 
-Run the setup script to initialize everything:
+The request flow is:
 
-```bash
-./setup.sh
-```
+1. Build execution context from warehouse metadata + dbt artifacts.
+2. Classify user intent with deterministic rules + confidence.
+3. Select a SQL template for the inferred intent.
+4. Validate SQL for safety and schema compliance.
+5. Execute with bounded rows/time and map errors to user-facing messages.
+6. Return interpreted SQL, rows, and caveats in one stable payload.
 
-This will:
-1. Generate synthetic data
-2. Initialize Airflow and load data into DuckDB
-3. Run dbt transformations
+## Why this architecture
 
-Then view the dashboards:
+I optimized for reliability and explainability because this is a take-home assessment with unknown evaluator prompts.
 
-```bash
-cd evidence
-npm install       # First time only
-npm run sources   # Build data sources
-npm run dev       # Start dev server
-# Open http://localhost:3000
-```
+- **Metadata-first context**: I avoid hardcoded business assumptions and infer tables, columns, and likely layer roles from `information_schema` and dbt files.
+- **Template-first SQL**: I generate deterministic SQL for high-value question types, which is safer and easier to test than free-form generation.
+- **Explicit safety**: I enforce read-only SQL only, allowlist validation, and hard caps on query volume before execution.
+- **Small adapter layer**: I isolate platform access behind an adapter interface so the core agent is not locked to DuckDB.
+- **Structured responses**: I return both human-readable and machine-readable output with explicit assumptions/caveats.
+- **Test-driven implementation**: I wrote each layer with unit tests first, then integration prompts that mirror real user questions.
 
----
+## Trade-offs I accepted
 
-## Manual Setup (Advanced)
+- **Lower flexibility up front** in exchange for **higher predictability**.
+- **Less semantic trickery** (no embeddings/vector search in this version) in exchange for a **clear audit trail and safer behavior**.
+- **Simple CLI command surface** (single mode) in exchange for reduced complexity and easier evaluation.
 
-<details>
-<summary>Click to expand manual setup steps</summary>
+## What I added
 
-### 1. Install dependencies
+- Adapter abstraction (`duckdb`, `base`) with contract and behavior tests.
+- Metadata extraction for schemas, tables, and role inference from naming/column signatures.
+- Optional evidence page pattern scan as weak signal only (non-authoritative).
+- Intent classifier for top archetypes: sales trend, co-purchase, anomalies, CLV, top-N, and fallback.
+- SQL templating + strict SQL validation (read-only, allowlist, limit enforcement).
+- Query executor with timing + bounded results + friendly error mapping.
+- Presenter model for JSON and terminal outputs.
+- CLI integration and deterministic fixtures for repeatable tests.
+- Integration tests for all four assessment prompts.
+
+## Runbook
 
 ```bash
 uv sync
+./setup.sh
+uv run mini-agent ask "How much in sales did we do last quarter?"
+uv run mini-agent ask "Which two products are most frequently bought together?" --json
+uv run pytest tests/unit
+uv run pytest tests/integration
 ```
 
-### 2. Generate synthetic data
+## What I would do with more time
 
-```bash
-uv run python scripts/generate_all.py
-```
-
-### 3. Initialize Airflow
-
-First, update `airflow/airflow.cfg` to use an absolute path for the database:
-
-```bash
-cd airflow
-# Update sql_alchemy_conn in airflow.cfg to:
-# sql_alchemy_conn = sqlite:////absolute/path/to/your/mini-data-platform/airflow/airflow.db
-
-export AIRFLOW_HOME=$(pwd)
-uv run airflow db migrate
-```
-
-### 4. Run ingestion DAGs
-
-```bash
-# From airflow/ directory
-export AIRFLOW_HOME=$(pwd)
-uv run python dags/ingest_products.py
-uv run python dags/ingest_users.py
-uv run python dags/ingest_transactions.py
-uv run python dags/ingest_campaigns.py
-uv run python dags/ingest_pageviews.py
-```
-
-### 5. Run dbt transformations
-
-```bash
-# From airflow/ directory
-export AIRFLOW_HOME=$(pwd)
-uv run python dags/run_dbt.py
-
-# Or run dbt directly
-cd ../dbt_project
-uv run dbt build --profiles-dir .
-```
-
-</details>
-
-## Project Structure
-
-```sh
-mini-data-platform/
-├── sources/              # Raw source data (CSV files)
-│   ├── postgres/         # Sales, products, users
-│   ├── salesforce/       # Marketing campaigns
-│   └── analytics/        # Page view events
-├── airflow/
-│   ├── dags/            # Airflow DAGs for ingestion and transformation
-│   │   ├── ingest_*.py  # Load data from sources → raw schema
-│   │   ├── run_dbt.py   # Run dbt staging → marts pipeline
-│   │   └── build_evidence.py  # Build Evidence dashboards
-│   └── utils/           # Shared utilities
-├── warehouse/           # DuckDB database (data.duckdb)
-├── dbt_project/         # dbt transformations
-│   └── models/
-│       ├── staging/     # Clean raw data (5 models)
-│       └── marts/       # Analytics-ready tables (3 models)
-├── evidence/            # Evidence BI dashboards
-│   ├── pages/           # Dashboard pages (index, sales, products, customers)
-│   └── sources/         # SQL queries and connection
-└── scripts/             # Data generation scripts
-```
-
-## Data Pipeline
-
-### Raw Layer (`raw` schema)
-
-- Loaded by Airflow ingestion DAGs
-- 5 tables: products, users, transactions, campaigns, pageviews
-
-### Staging Layer (`staging` schema)
-
-- Created by dbt
-- 5 views: stg_products, stg_users, stg_transactions, stg_campaigns, stg_pageviews
-
-### Marts Layer (`marts` schema)
-
-- Created by dbt
-- Denormalized tables for analysis
-- 3 tables:
-  - `dim_products`: Current product catalog (62 products)
-  - `dim_customers`: Current customer info (5,000 customers)
-  - `fct_orders`: Order line items with dimensions (35,980 rows)
-
-## Data Volumes
-
-- **Raw**: ~93K total rows across 5 tables
-- **Staging**: Same as raw (views)
-- **Marts**: 5,062 dimension rows + 35,980 fact rows
-- **Database Size**: ~5-10 MB (DuckDB)
-
-## Evidence Dashboards
-
-The project includes interactive dashboards built with Evidence:
-
-### Available Dashboards
-
-1. **Overview** (`/`) - Key metrics, revenue trends, category performance
-2. **Sales** (`/sales`) - Daily/monthly sales, country analysis, recent orders
-3. **Products** (`/products`) - Product performance, category trends, price analysis
-4. **Customers** (`/customers`) - Customer segments, lifetime value, acquisition trends
-
-### Running Evidence
-
-```bash
-cd evidence
-npm install       # First time only
-npm run sources   # Build data sources
-npm run dev       # Start dev server
-```
-
-Then open http://localhost:3000 to view dashboards.
-
-**Note**: Evidence connects to the DuckDB warehouse at `../warehouse/data.duckdb` and queries the `marts` schema through pass-through SQL files (`fct_orders.sql`, `dim_customers.sql`, `dim_products.sql`).
-
-### Building Evidence (Static Site)
-
-```bash
-# Using Airflow DAG
-cd airflow
-uv run python dags/build_evidence.py
-
-# Or build directly
-cd evidence
-npm run build
-```
+I would add a hybrid retrieval-augmented planner that uses embeddings as a secondary signal for ambiguous questions, while keeping metadata + templates as primary authority.
+I would also improve cross-warehouse support, enrich dbt-semantic context from manifests/docs, and add ranking/observability for generated plans.
