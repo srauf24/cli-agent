@@ -1,191 +1,133 @@
-# Mini Data Platform
+# Mini Data Platform CLI Agent
 
-If you have an applied AI interview at Astronomer, we'll ask you to build a small project around this repo. You can also proactively do this as part of your application to speed up the process.
+## Purpose
 
-This repo is a synthetic data platform containing mock data csv files, Airflow DAGs, dbt models, Evidence dashboards, and a DuckDB data warehouse. Your objective is to create an agent exposed via a CLI to interact with the data platform. This CLI agent should be geared specifically towards ad-hoc questions and analysis. Things like:
+This repository demonstrates a CLI analytics agent for ad-hoc platform questions over a DuckDB warehouse.
 
-- How much in sales did we do last quarter?
+The agent answers prompts such as:
+
+- How much in sales did we do this quarter?
 - Which two products are most frequently bought together?
 - Are there any anomalies with how we sell products?
 - What's our average customer lifetime value?
-- ... and other, more complex things!
 
-To complete this, clone the repo:
+It was built to show a practical, safe, and reusable pattern for turning natural language into reliable SQL answers with minimal setup.
 
-```bash
-git clone https://github.com/astronomer/mini-data-platform.git
-```
+## Core approach
 
-Then build a CLI agent where you can send questions like the ones above. We have no particular requirements around languages, model providers, methods, etc - instead, we want you to demonstrate how you think about these problems! While this repo is representative of an e-commerce company's data platform, you should aim to keep your implementation generic enough that you could plug in other "mini data platforms". See how much you can infer based on the code and warehouse metadata instead of providing explicit documentation about this data platform to the agent upfront.
+We kept the implementation deterministic and metadata-driven.
 
-To submit, share your repo with us. You should modify / create a new README that outlines your approach and where you'd continue building things if you had more time. This should take no more than a few hours.
+1. Load context from warehouse metadata and dbt project structure.
+2. Classify intent from the user question with confidence-aware rules.
+3. Select a SQL template for the inferred intent.
+4. Validate SQL against discovered schema and read-only constraints.
+5. Execute through an adapter layer with bounded row/window limits.
+6. Present a stable response payload for terminal and JSON.
 
-## Quick Setup
+This is implemented as a single command flow:
 
-Run the setup script to initialize everything:
+- `mini-agent ask "<question>"`.
+- Optional `--json` output for machine consumption.
+- Optional `--limit` for result cap.
+- One execution mode only, as requested.
 
-```bash
-./setup.sh
-```
+## Technical decisions and tradeoffs
 
-This will:
-1. Generate synthetic data
-2. Initialize Airflow and load data into DuckDB
-3. Run dbt transformations
+1. Template-first SQL generation
+1. It gives predictable behavior for high-value question archetypes.
+2. It avoids brittle prompt-to-SQL errors under time constraints.
+3. It is easier to harden, test, and explain.
 
-Then view the dashboards:
+1. Deterministic metadata discovery
+1. Context is inferred from DuckDB `information_schema` and dbt model files.
+1. This avoids hardcoding e-commerce-specific assumptions.
+1. It supports reuse on other mini data platforms with similar artifacts.
 
-```bash
-cd evidence
-npm install       # First time only
-npm run sources   # Build data sources
-npm run dev       # Start dev server
-# Open http://localhost:3000
-```
+1. Explicit safety layer
+1. SQL validation blocks non-SELECT operations.
+1. Table and column references are checked against discovered metadata.
+1. Limits are enforced and capped to configured boundaries.
+1. This keeps execution low risk for read-only usage.
 
----
+1. Adapter abstraction
+1. A small platform adapter interface isolates storage details.
+1. The code remains portable toward other warehouses later.
 
-## Manual Setup (Advanced)
+1. Strict test-first process
+1. Unit tests cover adapter, validator, metadata, templates, presenter, and CLI behavior.
+1. Shared deterministic fixtures keep tests stable across runs.
+1. Integration tests validate end-to-end prompt archetypes and output contracts.
 
-<details>
-<summary>Click to expand manual setup steps</summary>
+## Why not full free-form SQL generation
 
-### 1. Install dependencies
+In assessment time, deterministic templates provide the best reliability.
+
+Tradeoff:
+
+1. Strong correctness and explainability for known patterns.
+2. Reduced flexibility for fully arbitrary natural language.
+
+This is a deliberate baseline for safe production hardening and easy extensibility.
+
+## Test coverage added
+
+1. Unit suite
+1. [tests/unit/test_bootstrap.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_bootstrap.py)
+1. [tests/unit/test_config.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_config.py)
+1. [tests/unit/test_types.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_types.py)
+1. [tests/unit/test_adapter_base.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_adapter_base.py)
+1. [tests/unit/test_adapter_duckdb.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_adapter_duckdb.py)
+1. [tests/unit/test_metadata.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_metadata.py)
+1. [tests/unit/test_patterns.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_patterns.py)
+1. [tests/unit/test_intent.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_intent.py)
+1. [tests/unit/test_templates.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_templates.py)
+1. [tests/unit/test_sql_validator.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_sql_validator.py)
+1. [tests/unit/test_executor.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_executor.py)
+1. [tests/unit/test_agent_graph.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_agent_graph.py)
+1. [tests/unit/test_presenter.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_presenter.py)
+1. [tests/unit/test_cli.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_cli.py)
+1. [tests/unit/test_fixtures.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/unit/test_fixtures.py)
+1. [tests/integration/test_prompts.py](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/integration/test_prompts.py)
+
+## Fixture strategy
+
+1. Deterministic fixture SQL: [tests/fixtures/miniplatform_fixture.sql](/Users/sameerauf/.codex/worktrees/d609/mini-data-platform/tests/fixtures/miniplatform_fixture.sql)
+1. Shared fixture helpers in `tests/conftest.py`
+1. Tests validate idempotency and schema stability for long-running reliability.
+
+## Runbook
+
+1. Install dependencies
+1. Run setup for base data platform
+1. Ask a question with the CLI
+
+Example:
 
 ```bash
 uv sync
+./setup.sh
+uv run mini-agent ask "How much in sales did we do last quarter?"
 ```
 
-### 2. Generate synthetic data
+JSON mode:
 
 ```bash
-uv run python scripts/generate_all.py
+uv run mini-agent ask "Which two products are most frequently bought together?" --json
 ```
 
-### 3. Initialize Airflow
-
-First, update `airflow/airflow.cfg` to use an absolute path for the database:
+Run tests:
 
 ```bash
-cd airflow
-# Update sql_alchemy_conn in airflow.cfg to:
-# sql_alchemy_conn = sqlite:////absolute/path/to/your/mini-data-platform/airflow/airflow.db
-
-export AIRFLOW_HOME=$(pwd)
-uv run airflow db migrate
+uv run pytest tests/unit
+uv run pytest tests/integration
 ```
 
-### 4. Run ingestion DAGs
+## What I would do with more time
 
-```bash
-# From airflow/ directory
-export AIRFLOW_HOME=$(pwd)
-uv run python dags/ingest_products.py
-uv run python dags/ingest_users.py
-uv run python dags/ingest_transactions.py
-uv run python dags/ingest_campaigns.py
-uv run python dags/ingest_pageviews.py
-```
-
-### 5. Run dbt transformations
-
-```bash
-# From airflow/ directory
-export AIRFLOW_HOME=$(pwd)
-uv run python dags/run_dbt.py
-
-# Or run dbt directly
-cd ../dbt_project
-uv run dbt build --profiles-dir .
-```
-
-</details>
-
-## Project Structure
-
-```sh
-mini-data-platform/
-├── sources/              # Raw source data (CSV files)
-│   ├── postgres/         # Sales, products, users
-│   ├── salesforce/       # Marketing campaigns
-│   └── analytics/        # Page view events
-├── airflow/
-│   ├── dags/            # Airflow DAGs for ingestion and transformation
-│   │   ├── ingest_*.py  # Load data from sources → raw schema
-│   │   ├── run_dbt.py   # Run dbt staging → marts pipeline
-│   │   └── build_evidence.py  # Build Evidence dashboards
-│   └── utils/           # Shared utilities
-├── warehouse/           # DuckDB database (data.duckdb)
-├── dbt_project/         # dbt transformations
-│   └── models/
-│       ├── staging/     # Clean raw data (5 models)
-│       └── marts/       # Analytics-ready tables (3 models)
-├── evidence/            # Evidence BI dashboards
-│   ├── pages/           # Dashboard pages (index, sales, products, customers)
-│   └── sources/         # SQL queries and connection
-└── scripts/             # Data generation scripts
-```
-
-## Data Pipeline
-
-### Raw Layer (`raw` schema)
-
-- Loaded by Airflow ingestion DAGs
-- 5 tables: products, users, transactions, campaigns, pageviews
-
-### Staging Layer (`staging` schema)
-
-- Created by dbt
-- 5 views: stg_products, stg_users, stg_transactions, stg_campaigns, stg_pageviews
-
-### Marts Layer (`marts` schema)
-
-- Created by dbt
-- Denormalized tables for analysis
-- 3 tables:
-  - `dim_products`: Current product catalog (62 products)
-  - `dim_customers`: Current customer info (5,000 customers)
-  - `fct_orders`: Order line items with dimensions (35,980 rows)
-
-## Data Volumes
-
-- **Raw**: ~93K total rows across 5 tables
-- **Staging**: Same as raw (views)
-- **Marts**: 5,062 dimension rows + 35,980 fact rows
-- **Database Size**: ~5-10 MB (DuckDB)
-
-## Evidence Dashboards
-
-The project includes interactive dashboards built with Evidence:
-
-### Available Dashboards
-
-1. **Overview** (`/`) - Key metrics, revenue trends, category performance
-2. **Sales** (`/sales`) - Daily/monthly sales, country analysis, recent orders
-3. **Products** (`/products`) - Product performance, category trends, price analysis
-4. **Customers** (`/customers`) - Customer segments, lifetime value, acquisition trends
-
-### Running Evidence
-
-```bash
-cd evidence
-npm install       # First time only
-npm run sources   # Build data sources
-npm run dev       # Start dev server
-```
-
-Then open http://localhost:3000 to view dashboards.
-
-**Note**: Evidence connects to the DuckDB warehouse at `../warehouse/data.duckdb` and queries the `marts` schema through pass-through SQL files (`fct_orders.sql`, `dim_customers.sql`, `dim_products.sql`).
-
-### Building Evidence (Static Site)
-
-```bash
-# Using Airflow DAG
-cd airflow
-uv run python dags/build_evidence.py
-
-# Or build directly
-cd evidence
-npm run build
-```
+1. I would add a retrieval layer powered by embeddings so intent classification can use semantically similar examples from evidence pages, prior successful SQL, and data docs.
+1. I would build a hybrid planner: metadata-first templates first, and fallback to retrieval-augmented generation only when confidence is low.
+1. I would add richer semantic context from dbt `manifest.json`, model docs, and glossary metadata to improve column/table intent mapping.
+1. I would implement query-plan ranking and reranking for ambiguous prompts before execution.
+1. I would add explainability output with provenance, retrieved context, and ranking reasons for each planned query.
+1. I would add caching for platform context discovery, semantic search hits, and compiled plans to reduce repeated latency.
+1. I would add richer telemetry, query history, and safety dashboards for operator observability.
